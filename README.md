@@ -9,6 +9,8 @@ deepseek-r1:1.5b
 # Functional Tasks
 ### Task 1: Create GUI for our application using Tkinter or other Python-based GUI library. 
 - Should include text box to type in, an enter button to submit your text to the AI and a textbox to show the AI's response
+- Style to look like a messeging app ( chatgpt or deepseek)
+- Add method to track "history" of chats
 
 ### Task 2: Enable the user to use speech-to-text to talk to the AI instead of typing in the text box.
 - Should include a start talking and stop talking button (or use one that toggles between those).
