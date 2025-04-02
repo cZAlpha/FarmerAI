@@ -1,4 +1,75 @@
+print("")
+print("[+] Initializing libraries used for this program...")
+from transformers import AutoModelForCausalLM, AutoTokenizer
+print("     [+] transformers has been imported.")
 import customtkinter as ctk
+print("     [+] customtkinter has been imported.")
+from peft import PeftModel
+print("     [+] peft has been imported.")
+import datetime
+print("     [+] datetime has been imported.")
+import torch
+print("     [+] datetime has been imported.")
+import time
+print("     [+] time has been imported.")
+print("[+] Initialization has finished.")
+print("")
+
+# Handles picking what model to use for the application
+valid_input = False
+while not valid_input:
+    print("Choose which model you would like to use:")
+    print("1. Our Model")
+    print("2. bagasbgs2516's Model")
+    model_choice = input("> ")
+    
+    # Handle choices
+    if model_choice == "1":
+        our_model = True # Whether or not our model will be used
+        valid_input = True # Exit loop
+    elif model_choice == "2":
+        our_model = False # Whether or not our model will be used
+        valid_input = True # Exit loop
+    else:
+        print("INVALID INPUT. You must enter '1' or '2'.")
+        time.sleep(3)
+        for _ in range(20):
+            print("")
+
+
+if (our_model):
+    print("")
+    print("You have chosen to use our model.")
+    print("")
+    print("~ Information ~")
+    print(" - Base Model: mistralai/Mistral-7B-v0.3")
+    print(" - Our Model:  czalpha/fine_tuned_model")
+    print(" - Tokenizer:  mistralai/Mistral-7B-v0.3")
+    print("")
+    # OUR MODEL
+        # Load base model
+    base_model = AutoModelForCausalLM.from_pretrained("mistralai/Mistral-7B-v0.3")
+        # Load the fine-tuned model with the adapter
+    our_model = PeftModel.from_pretrained(base_model, "czalpha/fine_tuned_model")
+        # Use the tokenizer from the base model (since it's the same as the fine-tuned one)
+    our_tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.3")
+else:
+    print("")
+    print("You have chosen to use bagasbgs2516's model.")
+    print("")
+    print("~ Information ~")
+    print(" - Base Model: meta-llama/Llama-2-7b-hf")
+    print(" - Our Model:  bagasbgs2516/llama2-agriculture-lora")
+    print(" - Tokenizer:  bagasbgs2516/llama2-agriculture-lora")
+    print("")
+    # bagasbgs2516's MODEL
+        # Load base model
+    meta_base_model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
+        # Load the fine-tuned model with the adapter
+    bagasbgs2516_model = PeftModel.from_pretrained(meta_base_model, "bagasbgs2516/llama2-agriculture-lora")
+        # Load the tokenizer from the *local* directory, using the files he provided.
+    bagasbgs2516_tokenizer = AutoTokenizer.from_pretrained("bagasbgs2516/llama2-agriculture-lora") 
+
 
 # App settings
 ctk.set_appearance_mode("dark")
@@ -8,38 +79,65 @@ ctk.set_default_color_theme("blue")
 chat_sessions = []
 current_chat_index = -1
 
-# Function to start a new chat
+
+def get_timestamp():
+    """Returns a timestamp string."""
+    now = datetime.datetime.now()
+    return now.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def new_chat():
+    # Function to start a new chat
     global current_chat_index
     current_chat_index = len(chat_sessions)
     chat_sessions.append([])  # Add empty session
     update_history_buttons()
     clear_chat_display()
 
+
 def clear_chat_display():
     for widget in chat_scroll_frame.winfo_children():
         widget.destroy()
 
-# Function to send message
+
 def send_message():
     global current_chat_index
     user_msg = user_input.get()
     if user_msg.strip() == "":
         return
-
-    ai_response = "I'm just a mock AI. How can I help you?"
-
+    
     if current_chat_index == -1:
         new_chat()
-
-    # Save messages to session
+    
+    # Add your message to the window before ANY AI stuff
     chat_sessions[current_chat_index].append(("You", user_msg))
-    chat_sessions[current_chat_index].append(("AI", ai_response))
-
-    # Display messages as bubbles
     add_message_bubble("You", user_msg)
+    
+    # Depending on the model selected by the user, calculate the AI's response
+    if (our_model): # If we're using our model
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        inputs = our_tokenizer(user_msg, return_tensors="pt").to(device)
+            # Get the output tokens from the AI
+        output_tokens = our_model.generate(**inputs, max_length=100) # CHANGE THIS BASED ON MODEL USAGE
+            # Turn that into like english or something
+        full_response = our_tokenizer.decode(output_tokens[0], skip_special_tokens=True) # CHANGE THIS BASED ON DIFFERING MODEL'S TOKENIZER
+            # Trim the response to exclude the input prompt
+        ai_response = full_response[len(our_tokenizer.decode(inputs["input_ids"][0], skip_special_tokens=True)):] # CHANGE THIS BASED ON DIFFERING MODEL'S TOKENIZER
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        inputs = bagasbgs2516_tokenizer(user_msg, return_tensors="pt").to(device)
+            # Get the output tokens from the AI
+        output_tokens = bagasbgs2516_model.generate(**inputs, max_length=100) # CHANGE THIS BASED ON MODEL USAGE
+            # Turn that into like english or something
+        full_response = bagasbgs2516_tokenizer.decode(output_tokens[0], skip_special_tokens=True) # CHANGE THIS BASED ON DIFFERING MODEL'S TOKENIZER
+            # Trim the response to exclude the input prompt
+        ai_response = full_response[len(bagasbgs2516_tokenizer.decode(inputs["input_ids"][0], skip_special_tokens=True)):] # CHANGE THIS BASED ON DIFFERING MODEL'S TOKENIZER
+    
+    # Save AI's to session
+    chat_sessions[current_chat_index].append(("AI", ai_response))
+    # Display messages as bubbles
     add_message_bubble("AI", ai_response)
-
+    
     user_input.delete(0, "end")
 
 # Display message bubble
@@ -57,9 +155,10 @@ def add_message_bubble(sender, message):
         wraplength=350,
         justify="left",
         padx=10,
-        pady=6
+        pady=4
     )
     bubble.pack(anchor=anchor_side, pady=4, padx=10)
+
 
 # Load previous chat session
 def load_chat(index):
@@ -68,6 +167,7 @@ def load_chat(index):
     clear_chat_display()
     for sender, msg in chat_sessions[index]:
         add_message_bubble(sender, msg)
+
 
 # Create chat history buttons
 def update_history_buttons():
@@ -79,6 +179,7 @@ def update_history_buttons():
                             command=lambda idx=i: load_chat(idx),
                             fg_color="#1f273f", hover_color="#293046")
         btn.pack(pady=5, padx=10)
+
 
 # Main window
 window = ctk.CTk()
