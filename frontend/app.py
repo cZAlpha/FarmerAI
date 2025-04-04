@@ -1,4 +1,134 @@
+print("")
+print("[+] Initializing libraries used for this program...")
+from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM, logging, BitsAndBytesConfig
+logging.set_verbosity_error() # Silence annoying tokenizer warnings
+print("    [+] transformer has been imported.")
+from accelerate import dispatch_model
+print("    [+] accelerate has been imported.")
 import customtkinter as ctk
+print("    [+] customtkinter has been imported.")
+import datetime
+print("    [+] datetime has been imported.")
+import torch
+print("    [+] torch has been imported.")
+import time
+print("    [+] time has been imported.")
+import os
+print("    [+] os has been imported.")
+print("[+] Initialization has finished.")
+print("")
+
+# Ensure the offloading directory exists or create it
+offload_dir = "./offload_dir"  # Replace with your desired directory
+os.makedirs(offload_dir, exist_ok=True)
+
+# Set bnb config due to large size of models
+bnb_config = BitsAndBytesConfig(
+    load_in_8bit=True,
+    llm_int8_enable_fp32_cpu_offload=True,
+    offload_folder=offload_dir  # Try explicitly setting it here as well
+)
+
+
+# Handles picking what model to use for the application
+valid_input = False
+while not valid_input:
+    print("[?] Choose which model you would like to use:")
+    print("    1. Our Model (DOES NOT WORK)")
+    print("    2. bagasbgs2516's Model (DOES NOT WORK)")
+    print("    3. AgriQBot (Works)")
+    model_choice = input("> ")
+    
+    # Handle choices
+    if model_choice == "1":
+        model = "our_model"
+        valid_input = True # Exit loop
+    elif model_choice == "2":
+        model = "bagasbgs2516"
+        valid_input = True # Exit loop
+    elif model_choice == "3":
+        model = "AgriQBot"
+        valid_input = True # Exit loop
+    else:
+        print("INVALID INPUT. You must enter '1' or '2' or '3'.")
+        time.sleep(3)
+        for _ in range(20):
+            print("")
+
+
+if model == "our_model":
+    print("")
+    print("You have chosen to use our model.")
+    print("")
+    print("~ Information ~")
+    print(" - Base Model: mistralai/Mistral-7B-v0.3")
+    print(" - Our Model:  czalpha/fine_tuned_model")
+    print(" - Tokenizer:  mistralai/Mistral-7B-v0.3")
+    print("")
+    # Load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.3")
+    # Load model with offload_folder
+    model = AutoModelForCausalLM.from_pretrained(
+        "czalpha/fine_tuned_model",
+        quantization_config=bnb_config,
+        device_map="auto",
+        offload_folder=offload_dir,
+        offload_state_dict=True,
+        torch_dtype=torch.float16,
+        trust_remote_code=True
+    )
+    model.config.use_cache = False
+    pipe = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        device_map="auto",
+        torch_dtype=torch.float16,
+        max_length=512,
+        clean_up_tokenization_spaces=True
+    )
+elif model == "bagasbgs2516":
+    print("")
+    print("You have chosen to use bagasbgs2516's model.")
+    print("")
+    print("~ Information ~")
+    print(" - Base Model: meta-llama/Llama-2-7b-hf")
+    print(" - bagasbgs2516's Model:  bagasbgs2516/llama2-agriculture-lora")
+    print(" - Tokenizer:  bagasbgs2516/llama2-agriculture-lora")
+    print("")
+    
+    tokenizer = AutoTokenizer.from_pretrained("bagasbgs2516/llama2-agriculture-lora")
+    model = AutoModelForCausalLM.from_pretrained(
+        "bagasbgs2516/llama2-agriculture-lora",
+        quantization_config=bnb_config,  # <-- pass the full config
+        device_map="auto"
+    )
+    
+    pipe = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer
+    )
+elif model == "AgriQBot":
+    print("")
+    print("You have chosen to use AgriQBot.")
+    print("")
+    print("~ Information ~")
+    print(" - Creator: mrSoul7766")
+    print(" - Model Link: https://huggingface.co/mrSoul7766/AgriQBot")
+    print(" - Dataset Link: https://huggingface.co/datasets/KisanVaani/agriculture-qa-english-only")
+    print("")
+    # Automatically choose GPU if available
+    device = 0 if torch.cuda.is_available() else -1
+    print(f"[ ] Loading pipeline to mrSoul7766's AgriQbot model... (Device: {'GPU' if device == 0 else 'CPU'})")
+    
+    # Load the model using Hugging Face pipeline
+    pipe = pipeline(
+        "text2text-generation", 
+        model="mrSoul7766/AgriQBot", 
+        device=device)
+    print("[+] Pipeline loaded.", "\n\n")
+
 
 # App settings
 ctk.set_appearance_mode("dark")
@@ -8,39 +138,57 @@ ctk.set_default_color_theme("blue")
 chat_sessions = []
 current_chat_index = -1
 
-# Function to start a new chat
+
+def get_timestamp():
+    """Returns a timestamp string."""
+    now = datetime.datetime.now()
+    return now.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def new_chat():
+    # Function to start a new chat
     global current_chat_index
     current_chat_index = len(chat_sessions)
     chat_sessions.append([])  # Add empty session
     update_history_buttons()
     clear_chat_display()
 
+
 def clear_chat_display():
     for widget in chat_scroll_frame.winfo_children():
         widget.destroy()
 
-# Function to send message
+
 def send_message():
     global current_chat_index
     user_msg = user_input.get()
     if user_msg.strip() == "":
         return
-
-    ai_response = "I'm just a mock AI. How can I help you?"
-
+    
     if current_chat_index == -1:
         new_chat()
-
-    # Save messages to session
+    
     chat_sessions[current_chat_index].append(("You", user_msg))
-    chat_sessions[current_chat_index].append(("AI", ai_response))
-
-    # Display messages as bubbles
     add_message_bubble("You", user_msg)
-    add_message_bubble("AI", ai_response)
-
+    
+    # Use the Hugging Face pipeline to generate the AI response
+    response = pipe(
+        user_msg,
+        max_length=200,
+        do_sample=True,
+        truncation=True,
+        pad_token_id=pipe.model.config.eos_token_id  # Explicitly set pad token
+    )[0]["generated_text"]
+    
+    # Try to trim out the prompt if it gets echoed
+    if response.lower().startswith(user_msg.lower()):
+        response = response[len(user_msg):].strip()
+    
+    chat_sessions[current_chat_index].append(("AI", response))
+    add_message_bubble("AI", response)
+    
     user_input.delete(0, "end")
+
 
 # Display message bubble
 def add_message_bubble(sender, message):
@@ -57,9 +205,10 @@ def add_message_bubble(sender, message):
         wraplength=350,
         justify="left",
         padx=10,
-        pady=6
+        pady=4
     )
     bubble.pack(anchor=anchor_side, pady=4, padx=10)
+
 
 # Load previous chat session
 def load_chat(index):
@@ -68,6 +217,7 @@ def load_chat(index):
     clear_chat_display()
     for sender, msg in chat_sessions[index]:
         add_message_bubble(sender, msg)
+
 
 # Create chat history buttons
 def update_history_buttons():
@@ -79,6 +229,7 @@ def update_history_buttons():
                             command=lambda idx=i: load_chat(idx),
                             fg_color="#1f273f", hover_color="#293046")
         btn.pack(pady=5, padx=10)
+
 
 # Main window
 window = ctk.CTk()
